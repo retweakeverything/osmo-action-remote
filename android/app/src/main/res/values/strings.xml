@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Osmo Remote</string>
+    <string name="channel_name">Camera connection</string>
+    <string name="channel_description">Keeps the camera link and running workflows alive.</string>
+</resources>
