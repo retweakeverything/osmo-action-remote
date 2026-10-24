@@ -3,6 +3,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Release signing comes from environment variables so the key never lives in
+// the repo. CI sets them from GitHub secrets; without them, release builds are
+// left unsigned and debug builds are unaffected.
+val releaseKeystore: String? = System.getenv("OSMO_KEYSTORE_FILE")
+
+// Version can be overridden from the command line, e.g. -PappVersionName=0.2.0
+val appVersionName = (findProperty("appVersionName") as String?) ?: "0.1.0"
+val appVersionCode = (findProperty("appVersionCode") as String?)?.toInt() ?: 1
+
 android {
     namespace = "com.retweakeverything.osmoremote"
     compileSdk = 36
@@ -12,13 +21,28 @@ android {
         applicationId = "com.retweakeverything.osmoremote"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("OSMO_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("OSMO_KEY_ALIAS")
+                keyPassword = System.getenv("OSMO_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 drops unused code and icons: about 45 MB down to a few MB.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 

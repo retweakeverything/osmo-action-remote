@@ -32,6 +32,39 @@ Or open `android/` in Android Studio and run the `app` configuration.
 Compose and AndroidX are pinned one release back (Compose BOM 2026.06.01,
 core-ktx 1.18, lifecycle 2.10) because the newest versions require compileSdk 37.
 
+## Releases
+
+Pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`, which
+tests, builds a signed and shrunk (R8) release APK, verifies the signature, and
+publishes it with a SHA-256 checksum on the GitHub Releases page.
+`.github/workflows/ci.yml` runs the tests and a debug build on every push and
+pull request.
+
+One-time signing setup:
+
+1. Create a release key **outside the repo** and back it up somewhere safe.
+   If it is lost, future updates cannot install over existing copies.
+
+   ```bash
+   keytool -genkeypair -keystore ~/osmo-release.jks -storetype PKCS12 \
+     -alias osmo -keyalg RSA -keysize 4096 -validity 10000
+   ```
+
+2. In the GitHub repo: Settings > Secrets and variables > Actions, add:
+
+   | Secret | Value |
+   | --- | --- |
+   | `OSMO_KEYSTORE_BASE64` | output of `base64 -i ~/osmo-release.jks` |
+   | `OSMO_KEYSTORE_PASSWORD` | keystore password |
+   | `OSMO_KEY_ALIAS` | `osmo` |
+   | `OSMO_KEY_PASSWORD` | key password (same as keystore password for PKCS12) |
+
+3. Release: `git tag v0.1.0 && git push origin v0.1.0`
+
+The version name comes from the tag and the version code is
+`major * 10000 + minor * 100 + patch`. Locally, a release build is signed only
+when the `OSMO_*` environment variables are set; otherwise it is left unsigned.
+
 ## Install on a phone
 
 1. Settings > About phone > Software information: tap **Build number** 7 times.
