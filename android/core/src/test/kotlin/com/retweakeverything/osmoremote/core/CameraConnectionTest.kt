@@ -65,7 +65,7 @@ class CameraConnectionTest {
     @Test fun managerConnectsRecordsAndSwitchesMode() = runTest {
         val fake = FakeCameraTransport(backgroundScope)
         val store = InMemoryPairingStore()
-        val mgr = CameraConnectionManager({ fake }, store, backgroundScope)
+        val mgr = CameraConnectionManager({ FakeRoute({ fake }) }, store, backgroundScope)
         mgr.connect(device)
         withTimeout(5_000) { mgr.ready.first { it } }
         assertTrue(store.isPaired(device.address))
@@ -83,7 +83,7 @@ class CameraConnectionTest {
 
     @Test fun managerReconnectsAfterLinkDrop() = runTest {
         val fake = FakeCameraTransport(backgroundScope)
-        val mgr = CameraConnectionManager({ fake }, InMemoryPairingStore(), backgroundScope)
+        val mgr = CameraConnectionManager({ FakeRoute({ fake }) }, InMemoryPairingStore(), backgroundScope)
         mgr.connect(device)
         withTimeout(5_000) { mgr.ready.first { it } }
 
@@ -94,11 +94,74 @@ class CameraConnectionTest {
     }
 
     @Test fun commandsFailFastWhenNotConnected() = runTest {
-        val mgr = CameraConnectionManager({ FakeCameraTransport(backgroundScope) }, InMemoryPairingStore(), backgroundScope)
+        val mgr = CameraConnectionManager({ FakeRoute({ FakeCameraTransport(backgroundScope) }) }, InMemoryPairingStore(), backgroundScope)
         try {
             mgr.startRecording()
             fail("expected CameraUnavailableException")
         } catch (_: CameraUnavailableException) {
         }
+    }
+
+    @Test fun sleepThenWakeGoesThroughTheRoute() = runTest {
+        val fake = FakeCameraTransport(backgroundScope)
+        val route = FakeRoute({ fake }, wakes = { fake.hearWakeAdvert() })
+        val mgr = CameraConnectionManager({ route }, InMemoryPairingStore(), backgroundScope)
+        mgr.connect(device)
+        withTimeout(5_000) { mgr.ready.first { it } }
+
+        mgr.sleep()
+        withTimeout(2_000) { mgr.status.first { it?.sleeping == true } }
+        try {
+            mgr.startRecording()
+            fail("commands must be refused while asleep")
+        } catch (_: CommandException) {
+        }
+
+        mgr.wake()
+        assertEquals(1, route.wakeCalls)
+        assertEquals(false, mgr.status.value!!.sleeping)
+        mgr.startRecording()
+        mgr.disconnect()
+    }
+
+    @Test fun wakeFailsWhenCameraDoesNotRespond() = runTest {
+        val fake = FakeCameraTransport(backgroundScope)
+        val route = FakeRoute({ fake }) // advert never reaches the camera, like a random-address advertiser
+        val mgr = CameraConnectionManager({ route }, InMemoryPairingStore(), backgroundScope, wakeConfirmMs = 3_000)
+        mgr.connect(device)
+        withTimeout(5_000) { mgr.ready.first { it } }
+        mgr.sleep()
+        withTimeout(2_000) { mgr.status.first { it?.sleeping == true } }
+        try {
+            mgr.wake()
+            fail("expected CommandException")
+        } catch (e: CommandException) {
+            assertEquals("camera did not wake up", e.message)
+        }
+        mgr.disconnect()
+    }
+
+    @Test fun wakeIsANoOpWhenAwake() = runTest {
+        val fake = FakeCameraTransport(backgroundScope)
+        val route = FakeRoute({ fake })
+        val mgr = CameraConnectionManager({ route }, InMemoryPairingStore(), backgroundScope)
+        mgr.connect(device)
+        withTimeout(5_000) { mgr.ready.first { it } }
+        withTimeout(2_000) { mgr.status.first { it != null } }
+        mgr.wake()
+        assertEquals(0, route.wakeCalls)
+        mgr.disconnect()
+    }
+
+    @Test fun pairingsAreKeptPerRoute() {
+        val inner = InMemoryPairingStore()
+        var route: CameraRoute = FakeRoute({ error("unused") }, id = "phone")
+        val store = RoutePairingStore(inner) { route }
+        store.markPaired(device)
+        assertTrue(store.isPaired(device.address))
+        assertEquals(device, store.lastDevice())
+        route = FakeRoute({ error("unused") }, id = "usb")
+        assertEquals(false, store.isPaired(device.address))
+        assertEquals(null, store.lastDevice())
     }
 }

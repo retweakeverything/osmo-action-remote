@@ -132,6 +132,7 @@ class WorkflowRunner(
             Step.Highlight -> withCamera { camera.highlight() }
             is Step.Wait -> timedWait(step.seconds)
             Step.Sleep -> withCamera { camera.sleep() }
+            Step.Wake -> camera.wake()  // works while the link is down too
             is Step.Repeat -> error("handled above")
         }
         stepsDone++

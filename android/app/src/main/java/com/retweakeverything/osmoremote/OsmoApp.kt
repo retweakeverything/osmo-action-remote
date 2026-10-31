@@ -3,15 +3,22 @@ package com.retweakeverything.osmoremote
 import android.app.Application
 import android.util.Log
 import com.retweakeverything.osmoremote.ble.BleCameraScanner
-import com.retweakeverything.osmoremote.ble.BleCameraTransport
+import com.retweakeverything.osmoremote.ble.BleCameraWaker
+import com.retweakeverything.osmoremote.ble.PhoneRoute
 import com.retweakeverything.osmoremote.ble.BluetoothStateMonitor
 import com.retweakeverything.osmoremote.core.CameraConnectionManager
+import com.retweakeverything.osmoremote.core.RoutePairingStore
+import com.retweakeverything.osmoremote.core.bridge.BridgeClient
+import com.retweakeverything.osmoremote.core.bridge.BridgeRoute
 import com.retweakeverything.osmoremote.core.Logger
 import com.retweakeverything.osmoremote.core.workflow.WorkflowRunner
 import com.retweakeverything.osmoremote.data.PrefsPairingStore
+import com.retweakeverything.osmoremote.data.RouteOption
+import com.retweakeverything.osmoremote.data.RouteSelector
 import com.retweakeverything.osmoremote.data.Settings
 import com.retweakeverything.osmoremote.data.WorkflowRepository
 import com.retweakeverything.osmoremote.service.CameraServiceController
+import com.retweakeverything.osmoremote.usb.UsbSerialLink
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,10 +48,27 @@ class AppContainer(app: Application) {
     val logger = RingLogger()
     val settings = Settings(app)
     val bluetooth = BluetoothStateMonitor(app)
-    val pairingStore = PrefsPairingStore(app)
-    val scanner = BleCameraScanner(app, logger)
+    val routes = RouteSelector(
+        options = listOf(
+            RouteOption(
+                PhoneRoute(app, logger, BleCameraScanner(app, logger), BleCameraWaker(app, logger)),
+                label = "Phone Bluetooth",
+                description = "The phone talks to the camera directly.",
+                needsPhoneBluetooth = true,
+            ),
+            RouteOption(
+                BridgeRoute(BridgeClient(UsbSerialLink(app, logger), scope, logger)),
+                label = "ESP32 on USB",
+                description = "An ESP32 with the osmo-bridge firmware, plugged into the phone, relays every command.",
+                needsPhoneBluetooth = false,
+            ),
+        ),
+        settings = settings,
+    )
+    val pairingStore = RoutePairingStore(PrefsPairingStore(app)) { routes.current.value.route }
+    val scanner = routes.scanner
     val connection = CameraConnectionManager(
-        transportFactory = { BleCameraTransport(app, logger) },
+        route = { routes.current.value.route },
         pairingStore = pairingStore,
         scope = scope,
         logger = logger,

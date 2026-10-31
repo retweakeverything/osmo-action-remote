@@ -51,6 +51,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("auto_reconnect", true)
         set(v) = prefs.edit().putBoolean("auto_reconnect", v).apply()
 
+    /** Id of the selected [com.retweakeverything.osmoremote.core.CameraRoute]. */
+    var routeId: String
+        get() = prefs.getString("route", "phone") ?: "phone"
+        set(v) = prefs.edit().putString("route", v).apply()
+
     var keepAliveInBackground: Boolean
         get() = prefs.getBoolean("keep_alive", true)
         set(v) = prefs.edit().putBoolean("keep_alive", v).apply()

@@ -1,8 +1,12 @@
 # OsmoActionRemote
 
 A free, open-source **Android** remote for the **DJI Osmo Action 5 Pro**. It
-talks to the camera directly over Bluetooth Low Energy using DJI's R SDK
-protocol. No DJI Mimo, no account, no cloud.
+talks to the camera over Bluetooth Low Energy using DJI's R SDK protocol. No
+DJI Mimo, no account, no cloud.
+
+It works with the phone alone. Add an optional **ESP32 on USB** and the app
+can also wake the camera from sleep, which a phone cannot do by itself
+([why](#esp32-relay-optional)).
 
 <p>
   <img src="docs/screenshots/remote.jpg" alt="Remote: battery, mode, SD space, photos left and the shutter button" width="230">
@@ -19,9 +23,13 @@ protocol. No DJI Mimo, no account, no cloud.
 - **Remote**: record / stop, take photo (in Photo mode), highlight tags while
   recording, and direct mode selection (Video, Photo, Slow Motion, Timelapse,
   Hyperlapse, SuperNight).
+- **Sleep and wake**: put the camera to sleep and wake it again, from the
+  Remote, the camera page, or a workflow. Waking needs the ESP32 relay.
+- **Two routes, same app**: the phone's own Bluetooth, or an ESP32 plugged in
+  over USB that relays every command. Pick one on the Connect screen.
 - **Workflows**: build capture sequences from blocks (set mode, take photo,
   record for N seconds, start/stop recording, highlight, wait, repeat N times
-  or until stopped, sleep). Ships with templates such as interval clips and
+  or until stopped, sleep, wake). Ships with templates such as interval clips and
   "photo + 2 s clip". Pause, resume, and stop at any time; stopping ends any
   recording the workflow started.
 - **Runs in the background** with a notification, so workflows keep going
@@ -44,14 +52,12 @@ commands ([screenshot](docs/screenshots/playback.jpg)).
 
 ## Known limitations
 
-- **The app cannot wake a sleeping camera.** Sleep works, but the camera only
-  accepts the wake broadcast from a remote that uses a fixed (public)
-  Bluetooth address. Android reserves that for system apps, so a normal app
-  cannot do it. We confirmed the exact wake packet over the air and the camera
-  still ignores it; others report the same in
-  [DJI issue #24](https://github.com/dji-sdk/Osmo-GPS-Controller-Demo/issues/24).
-  Wake the camera with its power button. Details in
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md#waking-a-sleeping-camera-not-possible-from-android).
+- **Waking the camera needs the ESP32 relay** and camera firmware
+  01.04.08.10 or later. The camera only accepts the wake broadcast from a
+  fixed (public) Bluetooth address, and Android gives normal apps a random
+  one. On the phone route the app still sends the wake broadcast, but the
+  camera will most likely ignore it; wake it with its power button instead.
+  Details in [`docs/PROTOCOL.md`](docs/PROTOCOL.md#sleep-and-wake).
 - **No live preview or media download.** Those use the camera's Wi-Fi.
 - **Screen brightness, screen-off and auto power-off** are not in DJI's
   Bluetooth protocol. Set them on the camera. For long workflows, set auto
@@ -68,7 +74,8 @@ commands ([screenshot](docs/screenshots/playback.jpg)).
    unknown apps.
 
 Requires Android 12 or newer with Bluetooth LE. The app asks for Bluetooth
-(nearby devices) and notification permissions, and never uses location.
+(nearby devices) and notification permissions, and never uses location. The
+ESP32 route also needs USB host (OTG) support, which almost every phone has.
 
 To build it yourself, see [`android/README.md`](android/README.md).
 
@@ -81,19 +88,44 @@ To build it yourself, see [`android/README.md`](android/README.md).
 4. **Workflows**: run a template, or build your own. A Repeat block shows its
    contents indented underneath; use **Add block inside repeat** to fill it.
    Blocks run exactly as ordered, so set the right mode before capturing.
-5. Tap the bar at the top to manage the camera: disconnect, forget, sleep,
-   background keep-alive, and the connection log.
+5. Tap the bar at the top to manage the camera: sleep, wake, disconnect,
+   forget, background keep-alive, and the connection log.
+
+## ESP32 relay (optional)
+
+A cheap ESP32 board plugged into the phone gives the app a Bluetooth radio
+with a fixed address, which is what the camera needs to accept a wake-up.
+The app keeps all the camera logic; the ESP32 only relays bytes, so every
+feature behaves the same on both routes.
+
+1. **Get a board**: ESP32-C3 or ESP32-S3 with USB-C, or an original ESP32 dev
+   board, plus a USB OTG cable for your phone.
+2. **Flash it**: download `osmo-bridge-<chip>.bin` from the
+   [latest release](../../releases/latest) and write it at address `0x0` with
+   any ESP flasher, for example the
+   [esptool-js](https://espressif.github.io/esptool-js/) web flasher, an
+   Android flasher app over USB OTG, or `esptool`. The app links to the
+   download and the instructions from the Connect screen.
+3. **Plug it into the phone**, open the app, choose **ESP32 on USB** on the
+   Connect screen, and pair once on the camera.
+4. **Update the camera firmware** to 01.04.08.10 or later if it is older
+   (DJI Mimo app). Older firmware ignores the wake broadcast.
+
+Boards, all flashing options, building from source and the serial protocol
+are in [`firmware/README.md`](firmware/README.md).
 
 ## Project layout
 
 | Path | What it is |
 | --- | --- |
-| [`android/`](android/README.md) | The app: `:protocol` (codec), `:core` (session, reconnect, workflow engine), `:app` (Bluetooth + UI) |
-| [`tools/mac-probe/`](tools/mac-probe/README.md) | Python/Bleak tool used to reverse-engineer and verify the protocol from a Mac |
+| [`android/`](android/README.md) | The app: `:protocol` (codec), `:core` (session, reconnect, workflow engine, ESP32 bridge client), `:app` (Bluetooth, USB, UI) |
+| [`firmware/`](firmware/README.md) | ESP32 relay firmware (osmo-bridge) and the build script for the release images |
+| [`tools/mac-probe/`](tools/mac-probe/README.md) | Python tools used to reverse-engineer and verify the protocol from a Mac, directly or through the ESP32 relay |
 | [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | Verified protocol notes: frame format, CRCs, handshake, commands, status fields |
 
 ## Roadmap
 
+- Flash the ESP32 relay from inside the app
 - GPS injection from the phone into recordings
 - QR code sharing for workflows
 - Show the camera's mode details (for example "4K 60fps")
@@ -105,8 +137,9 @@ To build it yourself, see [`android/README.md`](android/README.md).
 Built on public reverse-engineering work, especially DJI's own
 [Osmo-GPS-Controller-Demo](https://github.com/dji-sdk/Osmo-GPS-Controller-Demo)
 (R SDK protocol and CRC parameters),
-[rhoenschrat/DJI-Remote](https://github.com/rhoenschrat/DJI-Remote), and
-[dstrat28/action-multicam-remote](https://github.com/dstrat28/action-multicam-remote).
+[rhoenschrat/DJI-Remote](https://github.com/rhoenschrat/DJI-Remote),
+[theserialhobbyist/M5StickCPlus2_Remote_For_DJI_Osmo](https://github.com/theserialhobbyist/M5StickCPlus2_Remote_For_DJI_Osmo),
+and [dstrat28/action-multicam-remote](https://github.com/dstrat28/action-multicam-remote).
 Full list in [`docs/PROTOCOL.md`](docs/PROTOCOL.md#sources).
 
 ## Disclaimer

@@ -38,6 +38,9 @@ sealed interface Step {
 
     @Serializable @SerialName("sleep")
     data object Sleep : Step
+
+    @Serializable @SerialName("wake")
+    data object Wake : Step
 }
 
 @Serializable
@@ -59,6 +62,7 @@ fun Step.describe(): String = when (this) {
     is Step.Wait -> "Wait ${formatSeconds(seconds)}"
     is Step.Repeat -> (times?.let { "Repeat $it times" } ?: "Repeat until stopped") + " (${steps.size} blocks)"
     Step.Sleep -> "Sleep camera"
+    Step.Wake -> "Wake camera"
 }
 
 fun formatSeconds(s: Int): String = when {

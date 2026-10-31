@@ -3,6 +3,7 @@ package com.retweakeverything.osmoremote.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.FiberManualRecord
@@ -50,6 +51,7 @@ object AppIcons {
         is Step.Wait -> Icons.Rounded.HourglassEmpty
         is Step.Repeat -> Icons.Rounded.Repeat
         Step.Sleep -> Icons.Rounded.Bedtime
+        Step.Wake -> Icons.Rounded.WbSunny
     }
 
     val run: ImageVector = Icons.Rounded.PlayArrow

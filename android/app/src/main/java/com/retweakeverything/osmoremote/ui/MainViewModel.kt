@@ -30,6 +30,8 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
     val templates: List<Workflow> = Templates.all
     val logs = c.logger.lines
     val bluetoothOn = c.bluetooth.enabled
+    val routes = c.routes.options
+    val route = c.routes.current
 
     private val _discovered = MutableStateFlow<List<DiscoveredCamera>>(emptyList())
     val discovered: StateFlow<List<DiscoveredCamera>> = _discovered
@@ -89,6 +91,16 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
         say("Forgot ${device.name}. Next connection will ask for confirmation on the camera.")
     }
 
+    /** Switching routes drops the current link; the next scan uses the new route. */
+    fun selectRoute(id: String) = viewModelScope.launch {
+        if (route.value.route.id == id) return@launch
+        stopScan()
+        if (c.runner.isRunning) c.runner.stop()
+        c.connection.disconnect()
+        c.routes.select(id)
+        _discovered.value = emptyList()
+    }
+
     fun setAutoReconnect(on: Boolean) {
         c.settings.autoReconnect = on
         c.connection.autoReconnect = on
@@ -116,7 +128,12 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
 
     fun sleepCamera() = command("Sleep") {
         c.connection.sleep()
-        say("Camera is asleep. Press its power button to wake it.")
+        say("Camera is asleep")
+    }
+
+    fun wakeCamera() = command("Waking") {
+        c.connection.wake()
+        say("Camera is awake")
     }
 
     private fun command(label: String, block: suspend () -> Unit) {

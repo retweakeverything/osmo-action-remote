@@ -30,6 +30,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.retweakeverything.osmoremote.core.ConnectionState
 import com.retweakeverything.osmoremote.core.DiscoveredCamera
+import com.retweakeverything.osmoremote.data.RouteOption
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Usb
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalUriHandler
 
 @Composable
 fun ConnectScreen(
@@ -43,21 +52,24 @@ fun ConnectScreen(
     val state by vm.connection.collectAsStateWithLifecycle()
     val found by vm.discovered.collectAsStateWithLifecycle()
     val scanning by vm.scanning.collectAsStateWithLifecycle()
+    val route by vm.route.collectAsStateWithLifecycle()
+    val radioReady = !route.needsPhoneBluetooth || (hasPermissions && bluetoothOn)
 
     val idle = state is ConnectionState.Idle || state is ConnectionState.Failed
-    DisposableEffect(idle, hasPermissions, bluetoothOn) {
-        if (idle && hasPermissions && bluetoothOn) vm.startScan()
+    DisposableEffect(idle, radioReady, route) {
+        if (idle && radioReady) vm.startScan()
         onDispose { vm.stopScan() }
     }
 
     Column(Modifier.fillMaxSize().padding(14.dp)) {
         Title("Connect")
+        RoutePicker(vm.routes, route, enabled = idle) { vm.selectRoute(it) }
         when {
-            !hasPermissions -> {
+            route.needsPhoneBluetooth && !hasPermissions -> {
                 Subtitle("Bluetooth permission is needed to find and control your camera. Nothing else is accessed.")
                 PrimaryButton("Grant Bluetooth permission", onClick = onRequestPermissions)
             }
-            !bluetoothOn -> {
+            route.needsPhoneBluetooth && !bluetoothOn -> {
                 Subtitle("Bluetooth is off. Turn it on to find and control your camera.")
                 PrimaryButton("Turn on Bluetooth", onClick = onEnableBluetooth)
             }
@@ -91,6 +103,35 @@ fun ConnectScreen(
                 Spacer(Modifier.height(12.dp))
                 GhostButton(if (scanning) "Stop scanning" else "Rescan") { if (scanning) vm.stopScan() else vm.startScan() }
             }
+        }
+    }
+}
+
+/** Choose how commands reach the camera. Everything else in the app is the same for both. */
+@Composable
+private fun RoutePicker(options: List<RouteOption>, current: RouteOption, enabled: Boolean, onSelect: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { o ->
+            val selected = o.route.id == current.route.id
+            FilterChip(
+                selected = selected, enabled = enabled,
+                onClick = { onSelect(o.route.id) },
+                label = { Text(o.label) },
+                leadingIcon = { Icon(if (o.needsPhoneBluetooth) Icons.Rounded.Bluetooth else Icons.Rounded.Usb, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Palette.accent.copy(alpha = 0.18f),
+                    selectedLabelColor = Palette.text, selectedLeadingIconColor = Palette.accent,
+                    labelColor = Palette.dim, iconColor = Palette.dim,
+                ),
+            )
+        }
+    }
+    Text(current.description, color = Palette.dim2, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(bottom = 6.dp))
+    if (!current.needsPhoneBluetooth) {
+        val uri = LocalUriHandler.current
+        Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = { uri.openUri(Links.RELEASES) }) { Text("Download firmware") }
+            TextButton(onClick = { uri.openUri(Links.ESP32_GUIDE) }) { Text("How to flash") }
         }
     }
 }

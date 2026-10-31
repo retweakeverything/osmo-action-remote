@@ -37,6 +37,7 @@ private class RecordingCamera(private val scope: TestScope) : CameraActions {
     override suspend fun setMode(mode: CameraMode) = call("mode:${mode.name}")
     override suspend fun highlight() = call("highlight")
     override suspend fun sleep() = call("sleep")
+    override suspend fun wake() = call("wake")
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

@@ -40,13 +40,15 @@ sealed interface ConnectionState {
  * Also implements [CameraActions] on top of the current session.
  */
 class CameraConnectionManager(
-    private val transportFactory: () -> CameraTransport,
+    /** The route in use; asked for a fresh transport on every connection attempt. */
+    private val route: () -> CameraRoute,
     private val pairingStore: PairingStore,
     private val scope: CoroutineScope,
     private val timeouts: SessionTimeouts = SessionTimeouts(),
     private val reconnectDelaysMs: List<Long> = listOf(1_000, 2_000, 5_000, 10_000),
     private val codeGenerator: () -> Int = { Random.nextInt(1000, 10000) },
     private val logger: Logger = Logger.NONE,
+    private val wakeConfirmMs: Long = 10_000,
 ) : CameraActions {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Idle)
     val state: StateFlow<ConnectionState> = _state
@@ -120,7 +122,7 @@ class CameraConnectionManager(
     }
 
     private suspend fun connectOnce(device: CameraDevice) {
-        val t = transportFactory().also { transport = it }
+        val t = route().newTransport().also { transport = it }
         t.connect(device)
         // Child of the running connection job, so cancelling the job also stops the session.
         val parent = currentCoroutineContext()[Job]
@@ -161,7 +163,7 @@ class CameraConnectionManager(
 
     private fun requireAwake(): CameraSession {
         val s = requireSession()
-        if (status.value?.sleeping == true) throw CommandException("camera is asleep: press its power button to wake it")
+        if (status.value?.sleeping == true) throw CommandException("camera is asleep: wake it first")
         return s
     }
 
@@ -205,6 +207,15 @@ class CameraConnectionManager(
     override suspend fun sleep() {
         val s = requireSession()
         s.sendOptional(Commands.powerMode(s.next(), sleep = true), timeoutMs = 2_000)
+    }
+
+    override suspend fun wake() {
+        val device = _state.value.device ?: throw CameraUnavailableException()
+        if (_state.value is ConnectionState.Ready && status.value?.sleeping == false) return
+        route().waker.wake(device)
+        // The camera answers on the same link (or after a reconnect) with an awake status push.
+        withTimeoutOrNull(wakeConfirmMs) { status.first { it != null && !it.sleeping } }
+            ?: throw CommandException("camera did not wake up")
     }
 
     /** Best effort: waits for the status push to reflect a change, never throws. */

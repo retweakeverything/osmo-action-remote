@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private val requiredPermissions = buildList {
         add(Manifest.permission.BLUETOOTH_SCAN)
         add(Manifest.permission.BLUETOOTH_CONNECT)
+        add(Manifest.permission.BLUETOOTH_ADVERTISE) // phone route's wake broadcast
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
     }.toTypedArray()
 
@@ -80,10 +81,11 @@ class MainActivity : ComponentActivity() {
         }
         val requestEnable = { enableBluetooth.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
         val bluetoothOn by vm.bluetoothOn.collectAsStateWithLifecycle()
-        // Ask once per launch, as soon as we are allowed to.
+        val route by vm.route.collectAsStateWithLifecycle()
+        // Ask once per launch, as soon as we are allowed to, and only when the route uses the phone's radio.
         var askedEnable by remember { mutableStateOf(false) }
-        LaunchedEffect(granted, bluetoothOn) {
-            if (granted && !bluetoothOn && !askedEnable) { askedEnable = true; requestEnable() }
+        LaunchedEffect(granted, bluetoothOn, route) {
+            if (route.needsPhoneBluetooth && granted && !bluetoothOn && !askedEnable) { askedEnable = true; requestEnable() }
         }
         val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {

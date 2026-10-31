@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,23 +68,29 @@ fun ManageScreen(vm: MainViewModel, onShowLog: () -> Unit, onClose: () -> Unit) 
 
         SectionLabel("Power")
         Text(
-            "Sleep saves battery, but this app cannot wake the camera again: the camera only accepts wake-up from " +
-                "a remote with a fixed Bluetooth address, which Android reserves for system apps. Wake it with its power button.",
+            "Wake uses DJI's wake broadcast, which the camera only accepts from a fixed (public) Bluetooth address. " +
+                "An ESP32 on USB has one; most phones do not. Needs camera firmware 01.04.08.10 or later.",
             color = Palette.dim, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 10.dp),
         )
-        GhostButton("Put camera to sleep", enabled = ready != null && busy == null && status?.sleeping != true) { confirmSleep = true }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GhostButton("Sleep", Modifier.weight(1f), enabled = ready != null && busy == null && status?.sleeping != true) { confirmSleep = true }
+            GhostButton("Wake", Modifier.weight(1f), enabled = device != null && busy == null && status?.sleeping == true) { vm.wakeCamera() }
+        }
         Spacer(Modifier.height(18.dp))
         if (state !is ConnectionState.Idle) GhostButton("Disconnect") { vm.disconnect(); onClose() }
         Spacer(Modifier.height(10.dp))
         if (device != null) DangerButton("Forget / unpair camera") { vm.forget(); onClose() }
         Spacer(Modifier.height(10.dp))
         GhostButton("View connection log", onClick = onShowLog)
+        Spacer(Modifier.height(10.dp))
+        val uri = LocalUriHandler.current
+        GhostButton("Source code, help and ESP32 firmware") { uri.openUri(Links.REPO) }
     }
 
     if (confirmSleep) AlertDialog(
         onDismissRequest = { confirmSleep = false },
         title = { Text("Put the camera to sleep?") },
-        text = { Text("You will need to press the camera's power button to wake it. This app cannot wake it.") },
+        text = { Text("If waking from this app does not work on your setup, press the camera's power button.") },
         confirmButton = { TextButton(onClick = { confirmSleep = false; vm.sleepCamera() }) { Text("Sleep") } },
         dismissButton = { TextButton(onClick = { confirmSleep = false }) { Text("Cancel") } },
     )

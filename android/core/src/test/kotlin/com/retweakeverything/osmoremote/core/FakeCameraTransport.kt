@@ -37,6 +37,7 @@ class FakeCameraTransport(
     var cameraRequestsSent = 0
     var capturing = false
     var modeCode = 0x01
+    var sleeping = false
     private var acked = false
     private var jobs = mutableListOf<Job>()
 
@@ -106,8 +107,19 @@ class FakeCameraTransport(
                 reply(f, "00")
                 notify(statusFrame())
             }
+            f.command == Command.POWER_MODE -> {
+                sleeping = f.payload[0].toInt() == 3
+                reply(f, "00")
+                notify(statusFrame())
+            }
             else -> reply(f, "00")
         }
+    }
+
+    /** What the camera does when it hears the wake advertisement. */
+    fun hearWakeAdvert() {
+        sleeping = false
+        notify(statusFrame())
     }
 
     private fun reply(to: RsdkFrame, payloadHex: String) =
@@ -117,6 +129,7 @@ class FakeCameraTransport(
         val p = ByteArray(38)
         p[0] = modeCode.toByte()
         p[1] = (if (capturing) 0x03 else 0x01).toByte()
+        p[28] = (if (sleeping) 3 else 0).toByte()
         p[37] = 63
         return RsdkFrame(0x1D, 0x02, 0, CmdType.RESPONSE_NONE, payload = p)
     }
@@ -135,4 +148,20 @@ class InMemoryPairingStore : PairingStore {
     override fun markPaired(device: CameraDevice) { paired += device.address; last = device }
     override fun forget(address: String) { paired -= address }
     override fun lastDevice() = last
+}
+
+/** A route over one fake camera; [wakes] decides whether the advertisement reaches it. */
+class FakeRoute(
+    private val transport: () -> CameraTransport,
+    var wakes: (CameraDevice) -> Unit = {},
+    override val id: String = "fake",
+) : CameraRoute {
+    var wakeCalls = 0
+    override val scanner: CameraScanner = object : CameraScanner {
+        override fun scan() = kotlinx.coroutines.flow.emptyFlow<List<DiscoveredCamera>>()
+    }
+    override val waker: CameraWaker = object : CameraWaker {
+        override suspend fun wake(device: CameraDevice) { wakeCalls++; wakes(device) }
+    }
+    override fun newTransport(): CameraTransport = transport()
 }

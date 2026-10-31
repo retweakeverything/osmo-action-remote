@@ -39,3 +39,9 @@ scratch/
 *.btsnoop
 *.pcap
 *.pcapng
+
+# ---- Local bridge identity (mac-probe) ----
+.bridge_device_id
+
+# ---- Firmware build output ----
+firmware/dist/

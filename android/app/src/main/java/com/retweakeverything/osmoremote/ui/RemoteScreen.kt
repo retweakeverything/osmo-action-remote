@@ -81,7 +81,11 @@ fun RemoteScreen(vm: MainViewModel, onGoConnect: () -> Unit) {
             }
             Spacer(Modifier.height(12.dp))
         }
-        if (asleep) Notice(Icons.Rounded.Bedtime, "Camera is asleep", "It ignores commands. Press the camera's power button to wake it.")
+        if (asleep) {
+            Notice(Icons.Rounded.Bedtime, "Camera is asleep", "It ignores other commands until it wakes.")
+            PrimaryButton(if (busy == "Waking") "Waking…" else "Wake camera", enabled = busy == null) { vm.wakeCamera() }
+            Spacer(Modifier.height(12.dp))
+        }
         if (playback) Notice(Icons.Rounded.Warning, "Camera is in playback", "Leave playback on the camera to record or take photos.")
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

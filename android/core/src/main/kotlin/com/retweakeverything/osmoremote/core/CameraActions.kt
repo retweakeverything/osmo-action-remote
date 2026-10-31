@@ -23,12 +23,16 @@ interface CameraActions {
     /** Highlight tag. The camera does not acknowledge it. */
     suspend fun highlight()
 
-    /**
-     * Puts the camera to sleep. A phone cannot wake it again: the camera only
-     * accepts the wake broadcast from a fixed (public) Bluetooth address, which
-     * Android reserves for system apps. The user must press the camera's button.
-     */
+    /** Puts the camera to sleep. The Bluetooth link stays up while it sleeps. */
     suspend fun sleep()
+
+    /**
+     * Wakes a sleeping camera with DJI's wake advertisement, sent by the active
+     * route, and waits until the camera reports it is awake. Throws
+     * [CommandException] when it does not wake (for example when the radio
+     * cannot advertise from a public Bluetooth address).
+     */
+    suspend fun wake()
 }
 
 /** The camera answered, but refused or failed the command. */

@@ -1,7 +1,7 @@
 # DJI Osmo Action BLE protocol notes
 
 Everything here was verified on an Osmo Action 5 Pro (device id `0xFF44`)
-unless marked otherwise. Frame layouts and CRC parameters come from DJI's
+unless marked otherwise. Camera firmware matters for wake; see below. Frame layouts and CRC parameters come from DJI's
 [Osmo-GPS-Controller-Demo](https://github.com/dji-sdk/Osmo-GPS-Controller-Demo);
 behaviour notes come from testing with `tools/mac-probe` and the Android app.
 
@@ -96,43 +96,70 @@ has the full field list, including `0x1D/0x06` (mode name and parameters as text
 
 ## Sleep and wake
 
-**Sleep works.** After `0x00/0x1A` with `03` the camera sleeps. The BLE link
-can stay up for a while and status pushes report power mode `03`, but the
-camera answers no commands, including power mode `00`. Later it stops
-advertising completely.
+**Sleep works on every route.** After `0x00/0x1A` with `03` the camera sleeps
+and answers `ret 0`. The BLE link stays up, status pushes report power mode
+`03` (then stop), and the camera answers no further commands, including power
+mode `00`.
 
-### Waking a sleeping camera is not possible from Android
+### Waking: the wake advertisement
 
-DJI wakes a camera with a 2-3 s advertisement holding only
-`0A FF 57 4B 50 <id reversed>` ("WKP"), where id is the 6 bytes the camera
-advertises after the `FA` marker in its manufacturer data (company `0x08AA`).
-On the Action 5 Pro that id is the BLE address, so a camera at
-`AA:BB:CC:DD:EE:FF` needs `0A FF 57 4B 50 FF EE DD CC BB AA`.
+The camera wakes when it hears, for about 2-3 s, an advertisement holding only
+`0A FF 57 4B 50 <camera address reversed>` ("WKP"). For a camera at
+`AA:BB:CC:DD:EE:FF` that is `0A FF 57 4B 50 FF EE DD CC BB AA`, sent as a
+connectable undirected advert (`ADV_IND`). The camera answers on the existing
+link with a status push showing power mode `00`.
 
-Tested on a Galaxy S24 Ultra (Android 16) with the camera confirmed asleep:
+Verified on an Action 5 Pro with the ESP32 relay (`firmware/osmo-bridge`):
 
-| Attempt | Result |
-| --- | --- |
-| Non-connectable advertisement with the payload above | ignored |
-| Connectable advertisement (`ADV_IND`), 3 s | ignored |
-| Advertising set without the Flags field, byte-identical to DJI's packet | ignored |
-| With the GATT link up, then again after disconnecting | ignored |
+| Camera firmware | Advertiser address | Result |
+| --- | --- | --- |
+| 01.02.03.40 | public (ESP32-C3, original ESP32, DJI's demo, the M5Stick remote's code) | never wakes |
+| 01.06.01.04 | public, ESP32-C3 and original ESP32 | **wakes on the first advert**, link kept or dropped |
+| 01.06.01.04 | random static, same ESP32-C3 | never wakes |
 
-A Mac sniffer (`tools/mac-probe/sniff_wake.py`) confirmed the exact bytes went
-out. Remotes that do wake the camera (DJI's GPS remote, ESP32 firmware, Avinox
-firmware) advertise from a fixed address, and Avinox switches to its public
-address just for the wake packet. Android advertises from a rotating random
-address; picking the address type (`setOwnAddressType`) is a hidden system API
-that needs `BLUETOOTH_PRIVILEGED`, there is no developer setting for it, and the
-privacy property cannot be changed without root.
+So two things are needed:
 
-Others report the same on Android, iOS, Wear OS and Flutter in
-[DJI issue #24](https://github.com/dji-sdk/Osmo-GPS-Controller-Demo/issues/24),
-still unanswered by DJI as of October 2026.
+1. **Camera firmware 01.04.08.10 or later.** That release added wake-up for
+   DJI's Avinox system. On older firmware no third-party remote we tried could
+   wake it.
+2. **A public advertiser address.** Same board, same pairing, same packet: only
+   the address type decided the outcome.
+
+What did not matter in our tests: the identity sent in the Connection Request
+(DJI's sample MAC with a random device id, or an empty identity as the app
+sends) and whether the GATT link was still up.
+
+### Why a phone cannot do it alone
+
+Android advertises from a random address. Choosing the address type
+(`setOwnAddressType`) is a hidden system API that needs
+`BLUETOOTH_PRIVILEGED`, so normal apps cannot pick the public address. The app
+still sends the wake advert on the phone route, in case some phone's stack
+advertises from its public address, and reports "camera did not wake up"
+otherwise. On the ESP32 route the relay sends the same payload from its public
+address.
+
+Phone attempts on firmware 01.02.03.40 (all ignored; that firmware ignored the
+ESP32 too): non-connectable advert, connectable advert, an advertising set
+byte-identical to DJI's packet, with and without the GATT link.
+`tools/mac-probe/sniff_wake.py` confirmed the bytes on air. The phone route has
+not been re-tested on 01.06.01.04; the random-address result above predicts it
+will not wake the camera.
+
+Related discussion: [DJI issue #24](https://github.com/dji-sdk/Osmo-GPS-Controller-Demo/issues/24).
+
+### Not a wake method
+
+- `0x00/0x1A` with `00` over the link while asleep: no reply.
+- DUML commands over the link (the camera accepts a DJI Mimo style DUML
+  session, but the Osmo Nano's wake command `0x53/0x10` does nothing on the
+  Action 5 Pro).
 
 ## Sources
 
 - [dji-sdk/Osmo-GPS-Controller-Demo](https://github.com/dji-sdk/Osmo-GPS-Controller-Demo): R SDK frame, CRCs, command payloads, golden test frames
 - [rhoenschrat/DJI-Remote](https://github.com/rhoenschrat/DJI-Remote): highlight via the QS key, connectable wake advertising, Action 5 Pro behaviour
+- [theserialhobbyist/M5StickCPlus2_Remote_For_DJI_Osmo](https://github.com/theserialhobbyist/M5StickCPlus2_Remote_For_DJI_Osmo): ESP32 remote with sleep and wake for the Action 5 Pro
+- [DJI Osmo Action 5 Pro release notes](https://www.dji.com/downloads/products/osmo-action-5-pro): firmware 01.04.08.10 adds wake-up for Avinox
 - [dstrat28/action-multicam-remote](https://github.com/dstrat28/action-multicam-remote): independent Action 5 Pro client and its list of BLE limits
 - [yigitkonur/lib-osmo-ble](https://github.com/yigitkonur/lib-osmo-ble), [xaionaro-go/djictl](https://github.com/xaionaro-go/djictl), [datagutt/node-osmo](https://github.com/datagutt/node-osmo): DUML framing and Pocket 3 research

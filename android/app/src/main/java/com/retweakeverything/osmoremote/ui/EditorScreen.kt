@@ -205,7 +205,6 @@ private fun BlockRow(step: Step, canUp: Boolean, canDown: Boolean, path: List<In
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(if (step is Step.Repeat) repeatTitle(step) else step.describe(), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            if (step == Step.Sleep) Text("You will need the camera's button to wake it", fontSize = 11.sp, color = Palette.warn)
         }
         RowIcon(Icons.Rounded.KeyboardArrowUp, "Move up", canUp) { actions.move(path, -1) }
         RowIcon(Icons.Rounded.KeyboardArrowDown, "Move down", canDown) { actions.move(path, +1) }
@@ -253,7 +252,8 @@ private fun BlockPalette(onDismiss: () -> Unit, onPick: (Step) -> Unit) {
         PaletteItem(Step.Highlight, "Highlight", "tag while recording"),
         PaletteItem(Step.Wait(10), "Wait", "N seconds"),
         PaletteItem(Step.Repeat(5, emptyList()), "Repeat", "N times or until stop"),
-        PaletteItem(Step.Sleep, "Sleep camera", "wake it with its button"),
+        PaletteItem(Step.Sleep, "Sleep camera", "saves battery"),
+        PaletteItem(Step.Wake, "Wake camera", "needs a public-address radio"),
     )
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Palette.panel2) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {

@@ -1,18 +1,38 @@
 # Android app
 
 Native Kotlin / Jetpack Compose app. Controls a DJI Osmo Action camera over
-Bluetooth LE using the DJI R SDK protocol verified with `tools/mac-probe`.
+Bluetooth LE using the DJI R SDK protocol verified with `tools/mac-probe`,
+either with the phone's own Bluetooth or through an ESP32 relay on USB
+([`firmware/`](../firmware/README.md)).
 
 ## Modules
 
 | Module | What it is | Needs Android? |
 | --- | --- | --- |
 | `:protocol` | R SDK frame codec, CRC16/CRC32, command builders, status parser, frame reassembly | No, pure Kotlin |
-| `:core` | `CameraSession` (handshake), `CameraConnectionManager` (connect, pairing, reconnect), workflow model and `WorkflowRunner` | No, pure Kotlin |
-| `:app` | Bluetooth scanner and transport, foreground service, storage, Compose UI | Yes |
+| `:core` | `CameraSession` (handshake), `CameraConnectionManager` (connect, pairing, reconnect, sleep/wake), workflow model and `WorkflowRunner`, and the ESP32 bridge client (`core/bridge`) | No, pure Kotlin |
+| `:app` | Phone Bluetooth route, USB serial link, foreground service, storage, Compose UI | Yes |
 
-`:core` only depends on the `CameraTransport` interface, so a different
-transport can plug in without touching the session, workflow engine, or UI.
+## Routes
+
+A `CameraRoute` bundles a scanner, a transport factory and a waker. There are
+two:
+
+| Route | Scanner / transport | Waker |
+| --- | --- | --- |
+| `phone` (`PhoneRoute`) | `BleCameraScanner`, `BleCameraTransport` | `BleCameraWaker`: the wake advert from the phone |
+| `usb` (`BridgeRoute`) | `BridgeScanner`, `BridgeTransport` over `BridgeClient` | `BridgeWaker`: `WAKE` sent to the ESP32 |
+
+`RouteSelector` holds the user's choice; the connection manager, workflow
+engine and UI only ever call the active route. Both routes send the same R SDK
+bytes and the same wake payload (`protocol/WakeAdvert`). Pairings are stored
+per route (`RoutePairingStore`), because the camera sees the phone and the
+ESP32 as different remotes.
+
+The USB link uses [usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android)
+3.11.0, which handles the ESP32-C3/S3 built-in USB (CDC-ACM) and CP210x / CH34x
+chips. It is only published on JitPack, so `settings.gradle.kts` uses JitPack
+for that one group and nothing else.
 
 ## Build
 
@@ -34,11 +54,21 @@ core-ktx 1.18, lifecycle 2.10) because the newest versions require compileSdk 37
 
 ## Releases
 
-Pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`, which
-tests, builds a signed and shrunk (R8) release APK, verifies the signature, and
-publishes it with a SHA-256 checksum on the GitHub Releases page.
-`.github/workflows/ci.yml` runs the tests and a debug build on every push and
-pull request.
+Pushing a tag such as `v0.2.0` runs `.github/workflows/release.yml`, which:
+
+- tests, builds a signed and shrunk (R8) release APK, verifies the signature,
+  and publishes it with a SHA-256 checksum on the GitHub Releases page;
+- builds the ESP32 relay images (`firmware/build.sh`) and attaches them to the
+  same release.
+
+The release page text is `docs/releases/<tag>.md` (what's new) followed by
+`docs/releases/install.md` (how to install the APK and flash the ESP32), then
+GitHub's generated list of changes. Add `docs/releases/v0.3.0.md` before
+tagging v0.3.0.
+
+`.github/workflows/ci.yml` runs the tests, a debug build and a firmware build
+on every push and pull request.
+
 
 One-time signing setup:
 
@@ -59,7 +89,7 @@ One-time signing setup:
    | `OSMO_KEY_ALIAS` | `osmo` |
    | `OSMO_KEY_PASSWORD` | key password (same as keystore password for PKCS12) |
 
-3. Release: `git tag v0.1.0 && git push origin v0.1.0`
+3. Release: write `docs/releases/v0.2.0.md`, commit, then `git tag v0.2.0 && git push origin v0.2.0`
 
 The version name comes from the tag and the version code is
 `major * 10000 + minor * 100 + patch`. Locally, a release build is signed only
@@ -76,9 +106,10 @@ when the `OSMO_*` environment variables are set; otherwise it is left unsigned.
 - `:protocol` checks every command frame byte for byte against the frames a
   real Action 5 Pro accepted from the Python probe, plus DJI's golden
   connection frames.
-- `:core` runs the handshake, reconnect, and workflow engine against a fake
-  camera that mimics the Action 5 Pro's observed behavior, including split
-  notifications and interleaved DUML telemetry.
+- `:core` runs the handshake, reconnect, sleep and wake, and workflow engine
+  against a fake camera that mimics the Action 5 Pro's observed behavior,
+  including split notifications and interleaved DUML telemetry. The bridge
+  tests run a whole session through a fake osmo-bridge firmware, line by line.
 
 ## Debugging
 
